@@ -1,0 +1,149 @@
+{
+  "info": {
+    "name": "Citrix Tenant Check",
+    "description": "Simple tenant check: token -> resource locations -> connectors.\n\nFill in customerId, clientId and clientSecret under the collection's Variables tab (and apiHost for your region), then run the collection. The run results state whether any Cloud Connector has a pending update.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "Authorization", "type": "string" },
+      { "key": "value", "value": "CwsAuth Bearer={{access_token}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "apiHost", "value": "api-eu.cloud.com", "description": "EU: api-eu.cloud.com | US: api-us.cloud.com | APAC: api-ap-s.cloud.com | Japan: api.citrixcloud.jp" },
+    { "key": "customerId", "value": "" },
+    { "key": "clientId", "value": "" },
+    { "key": "clientSecret", "value": "" },
+    { "key": "access_token", "value": "" },
+    { "key": "rlMap", "value": "{}" }
+  ],
+  "item": [
+    {
+      "name": "1. Get Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Connected to tenant ' + pm.collectionVariables.get('customerId'), function () {",
+              "    pm.response.to.have.status(200);",
+              "    var j = pm.response.json();",
+              "    pm.expect(j.access_token).to.be.a('string');",
+              "    pm.collectionVariables.set('access_token', j.access_token);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "grant_type", "value": "client_credentials" },
+            { "key": "client_id", "value": "{{clientId}}" },
+            { "key": "client_secret", "value": "{{clientSecret}}" }
+          ]
+        },
+        "url": {
+          "raw": "https://{{apiHost}}/cctrustoauth2/{{customerId}}/tokens/clients",
+          "protocol": "https",
+          "host": ["{{apiHost}}"],
+          "path": ["cctrustoauth2", "{{customerId}}", "tokens", "clients"]
+        }
+      }
+    },
+    {
+      "name": "2. Resource Locations",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var items = pm.response.json().items || [];",
+              "var map = {};",
+              "items.forEach(function (r) { map[r.id] = r.name; });",
+              "pm.collectionVariables.set('rlMap', JSON.stringify(map));",
+              "var names = items.map(function (r) { return r.name; }).join(', ');",
+              "pm.test('Resource locations (' + items.length + '): ' + names, function () {",
+              "    pm.expect(items.length).to.be.above(0);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Citrix-CustomerId", "value": "{{customerId}}" }
+        ],
+        "url": {
+          "raw": "https://registry.citrixworkspacesapi.net/{{customerId}}/resourcelocations",
+          "protocol": "https",
+          "host": ["registry", "citrixworkspacesapi", "net"],
+          "path": ["{{customerId}}", "resourcelocations"]
+        }
+      }
+    },
+    {
+      "name": "3. Connectors",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+              "var map = {};",
+              "try { map = JSON.parse(pm.collectionVariables.get('rlMap') || '{}'); } catch (e) {}",
+              "var list = pm.response.json();",
+              "var pending = [];",
+              "list.forEach(function (c) {",
+              "    var rl = map[c.location] || c.location;",
+              "    var isPending = c.currentVersion !== c.expectedVersion;",
+              "    if (isPending) { pending.push(c.fqdn); }",
+              "    var line = isPending",
+              "        ? 'PENDING UPDATE - ' + c.fqdn + ' (' + rl + '): ' + c.currentVersion + ' -> ' + c.expectedVersion",
+              "        : 'Up to date - ' + c.fqdn + ' (' + rl + '): ' + c.currentVersion;",
+              "    if (c.upgradeDisabled) { line += ' [upgrades disabled]'; }",
+              "    if (c.inMaintenance) { line += ' [in maintenance now]'; }",
+              "    pm.test(line, function () {});",
+              "    console.log(line);",
+              "});",
+              "var summary = pending.length > 0",
+              "    ? 'RESULT: ' + pending.length + ' of ' + list.length + ' connectors have a pending update'",
+              "    : 'RESULT: no pending updates - all ' + list.length + ' connectors are up to date';",
+              "pm.test(summary, function () {});",
+              "console.log(summary);",
+              "pm.visualizer.set('<div style=\"font-family:sans-serif;font-size:15px;padding:12px\"><b>{{summary}}</b></div>', { summary: summary });"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Citrix-CustomerId", "value": "{{customerId}}" }
+        ],
+        "url": {
+          "raw": "https://{{apiHost}}/connectors",
+          "protocol": "https",
+          "host": ["{{apiHost}}"],
+          "path": ["connectors"]
+        }
+      }
+    }
+  ]
+}
